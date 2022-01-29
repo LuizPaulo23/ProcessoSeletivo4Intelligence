@@ -1,0 +1,483 @@
+---
+title: 'Processo Seletivo: 4intelligence'
+author: "Luiz Paulo Tavares Gonçalves"
+date: "25/01/2022"
+output: pdf_document
+always_allow_html: true 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Bibliotecas utilizadas 
+
+```{r message= F, warning= F}
+rm(list = ls()) # Limpando a memória 
+
+# Packages 
+library(renv)
+init()
+library(readxl) # Importação dos Datasets 
+library(tidyverse) # Manipulação 
+library(DataExplorer) # Análise Exploratória 
+library(Amelia) # Tratamento de NA's
+library(lubridate) # Datetime 
+library(tidyr) # Pivot e higienização do dataset  
+library(cowplot) # Junção de plotes 
+library(TSstudio) # Plotes - Time Series 
+library(forecast) # Time Series
+library(knitr) # Tables
+library(rmarkdown) # Rmarkdown
+library(cluster) # Clusterização 
+library(factoextra) # Dendrograma - cluster 
+library(GGally) # Matriz de Correlação 
+library(urca) # Teste de Raiz unitária 
+snapshot()
+```
+
+# PROVA TEÓRICA
+
+# Questão 4
+
+Seguindo os pressupostos de modelagem, em primeiro, inicia-se fazendo uma análise exploratória dos dados. Assim, verificando o comportamento dos dados. No presente caso, em modelagem com séries temporais, buscaria verificar a presença de sazonalidade, autocorrelação, estacionariedade etc. Em segundo, buscaria aplicar testes formais de estacionariedade e cointegração, pois, no caso de séries temporais, a presença de cointegração ou de raiz unitária pode influenciar na escolha do modelo, por exemplo, entre um modelo VAR ou VEC. Em terceiro, caso necessário, passaria para o pré-processamento dos dados, isto é, a diferenciação das séries. Em quarto, com os resultados dos testes e da análise exploratória, passaria finalmente para a modelagem. No caso univariado, considerando apenas a venda de computadores, poderia selecionar até mesmo modelos de machine learning para séries temporais como, por exemplo, séries temporais com redes neurais multicamadas ou redes neurais com base radial. No caso de modelos multivariados, poderia-se modelar, como no presente caso de venda de computadores (oferta), um modelo com equações simultâneas (até mesmo utilizando variáveis instrumentais): considerando n variáveis explicativas como manda a lei de demanda e oferta (preço de venda, renda dos consumidores, preço de um bem substituto etc). 
+
+
+# PROVA DE PROGRAMAÇÃO - Parte A
+### 1. Importe o arquivo ”pmc.xlsx”pulando as três primeiras linhas
+
+```{r message= F, warning= F}
+data.pmc <- read_excel("pmc.xlsx", skip = 3)
+```
+
+### 2. Renomeie as colunas e as deixe na seguinte ordem: “data”, “var”, “setor” e colunas de localidades. Para essas últimas, utilize siglas (BR e siglas dos estados).
+
+```{r message= F, warning= F}
+data.pmc <- data.pmc %>% rename("data" = "...1", "var" = "...2", 
+                          "setor" = "...3", "BR" = "Brasil", 
+                            "CE" = "Ceará", "PE" = "Pernambuco", 
+                            "BA" = "Bahia", "MG" = "Minas Gerais", 
+                            "ES" = "Espírito Santo", "RJ" = "Rio de Janeiro", 
+                             "SP" = "São Paulo", "PA" = "Paraná", 
+                            "SC" = "Santa Catarina", "RS" = "Rio Grande do Sul", 
+                            "GO" = "Goiás", "DF" = "Distrito Federal")
+
+```
+
+### 3. Converta os valores das colunas de Brasil e UFs para que fiquem na classe numérica. Em seguida como passo 4. Substitua os textos na coluna “var”. Faça com que assumam apenas as palavras “volume” ou “receita”, a depender de cada linha.
+
+```{r message= F, warning= F}
+data.pmc <- data.pmc %>% mutate(BR = as.numeric(BR), CE = as.numeric(CE), 
+                                PE = as.numeric(PE), BA = as.numeric(BA), 
+                                MG = as.numeric(MG), ES = as.numeric(ES), 
+                                RJ = as.numeric(RJ), SP = as.numeric(SP), 
+                                PA = as.numeric(PA), SC = as.numeric(SC), 
+                                RS = as.numeric(RS), GO = as.numeric(GO), 
+                                DF = as.numeric(DF))
+ 
+```
+
+
+```{r message= F, warning= F}
+data.pmc <- data.pmc[1:4208, ] # Elimando a ultima linha, a linha da fonte 
+variavel <- rep(c("Volume","Receita"),263, each = 8) # repetir a cada 8 linhas volume, receita 
+data.base <- data.frame(variavel, data.pmc) # Unir em data.frame 
+
+# Finalizado a organizaçao de var 
+
+data.base <- data.base %>% 
+  select(!(var)) %>% 
+  rename("var" = "variavel")
+```
+
+###  5.Converta a coluna “data” para que ela assuma a classe própria para data. O padrão deve ser YYYY-MM-DD. (Utilize 01 quando não houver especificado o dia).
+
+```{r message= F, warning= F}
+# Criar um vetor de datas 
+
+data <- seq.Date(from = as_date("2000-01-01"), 
+           to = as_date("2021-11-01"),
+           by = "month")
+
+data = rep(c(data), each = 16)
+
+data.base <- data.frame(data, data.base)
+
+data.base <- data.base %>% 
+  select(!(data.1))
+```
+
+### 6. Para as colunas “data” e “var”, preencha os espaços contendo “NA” com a informação que não seja "NA" localizada imediatamente acima.
+
+Isso já foi feito em conjunto com os passos anteriores!
+
+### 7. Exclua todas as linhas em que a coluna “var” seja igual à “receita”.
+
+```{r message= F, warning= F}
+data.base <- data.base %>% 
+  filter(var %in% c("Volume"))
+
+data.base <- na.omit(data.base)
+
+# Visualizando o dataset limpo
+```
+
+# Como pode ser visualizado, o dataset finalmente está limpo: 
+
+```{r message= F, warning= F}
+plot_intro(data.base)
+```
+
+# Parte B
+
+### 1. Utilize visualizações e estatísticas para comparar o setor de Móveis e Eletrodomésticos com os outros setores. Como a sede da empresa é em São Paulo, verifique o comportamento neste estado. (Dê maior destaque para o período da pandemia).
+
+```{r message= F, warning= F}
+# Organização do dataset 
+
+data.base[, 3] <- str_sub(data.base$setor, start = 1, end = 7) # Abreviar os rótulos
+
+data.sp <- data.base %>% 
+  filter(data >= "2020-01-01") %>% 
+  select(data, var, setor, SP)
+```
+
+# Análise Exploratória 
+
+Após filtrado apenas os dados referente ao Estado de São Paulo, para o período de Janeiro de 2020 a Novembro de 2021, inicia-se a análise exploratória buscando mapear e comparar os setores produtivos. Assim, inicia-se plotando uma correlação de Pearson dos setores entre os Estados e com o Brasil ao longo do período. A correlação de Pearson pode ser dada como segue, no qual $\overline{x}$ e $\overline{y}$ representam a média de $x$ e $y$ como de praxe:  
+
+$$
+r = \frac{\sum_{i =1}^n(x_i - \overline{x})(y_i - \overline{y})}{\sqrt{\sum_{i=1}^n (x_i - \overline{x})^2 \sum_{i=1}^n (y_i - \overline{y})^2}}
+$$
+Como pode ser observado, em todos os Estados registrou-se um relação de associação linear entre os índices positiva, isto é, uma correlação positiva. Oscilando, em grande parte, entre correlações moderadas e fortes. Não obstante, como a correlação de Pearson é vulnerável a outliers e em casos da rejeição da hipótese de normalidade, vamos observar de forma mais minuciosa tais relações. A seguir pode-se visualizar boxplots para os setores: 
+
+```{r message= F, warning= F}
+plot_correlation(data.base[, 4:16])
+```
+
+Nota-se, nos boxplots, que os Artigos farmacêuticos, médicos, ortopédicos, de perfumaria e cosméticos representaram a maior mediana dos índices de volume de vendas. Seguido por Outros artigos de uso pessoal e doméstico, Hipermercados, supermercados, produtos alimentícios, bebidas e fumo. E finalmente, Móveis e eletrodomésticos. Observe que todos os setores, com exceção de Combustíveis e lubrificantes, retornaram a presença de outliers (pontos dicrepantes). Vamos visualizar a estatística descritiva dos setores mais de perto a seguir. 
+
+```{r message= F, warning= F}
+# Iniciando a análise exploratória 
+# Boxplot 
+
+ggplot2::ggplot(data.sp, aes(
+  y = SP, x = setor))+
+  geom_boxplot(pch = 19, fill = "orange", alpha = 0.6)+
+  labs(y = "Índice", x = "Atividade", 
+       title = "Índice do Volume de Vendas no comércio varejista (2020-2021)", 
+       caption = "Luiz Paulo Tavares Gonçalves")+
+  theme_bw()
+```
+
+
+```{r message= F, warning= F}
+# Visualizando as estatísticas descritivas 
+
+data.table <- data.sp %>% group_by(setor) %>% 
+  summarise(Média = mean(SP), 
+            Mediana = median(SP), 
+         Desvio = sd(SP), 
+         CV = (mean(SP)/sd(SP)))
+
+kable(data.table, caption = "Estatística Descritiva dos Setores (2020-2021)")
+
+```
+
+# 2. Compare visualmente o efeito da pandemia neste setor entre os estados. Observe diferenças na intensidade e no tempo para recuperação.
+
+Para uma comparação entre os Estados com relação ao setor de Móveis e eletrodomésticos, optou-se por filtrar um recorte temporal de janeiro de 2019 a novembro de 2021. Assim, obtendo uma amostra mais robusta e uma base de comparação pré-pandemia. Como pode ser visualizado nos plotes a seguir, o mês de abril de 2020 representou uma queda abrupta no volume de vendas no setor de móveis e eletrodomésticos - um visível outlier. Com uma tendência de recuperação em "V" que vai de junho até encontrar uma leve queda em setembro e outubro e, posteriormente, com um aumento nos dois últimos meses do ano. 
+
+```{r message= F, warning= F}
+data.moveis <- data.base %>% 
+  filter(setor %in% c("Móveis ") & data >= "2019-01-01")
+
+# Passando para série temporal 
+moveis.time <- ts(data.moveis[, 4:16], start = c(2019, 1), 
+                  end = c(2021, 11), frequency = 12)
+```
+
+
+```{r message= F, warning= F}
+# Visualizando as séries temporais 
+
+autoplot(moveis.time)+
+  labs(title = "Índice do Volume de Vendas no comércio varejista (2020-2021)", 
+       y = "Índice", x = "", caption = "Luiz Paulo Tavares Gonçalves")+
+  theme_bw()
+
+# Polar mapeando pontos sazonais 
+
+ts_polar(moveis.time, title = "Polar - Mapeando possíveis pontos sazonais")
+```
+
+```{r message= F, warning= F}
+# Sazonalidade 
+
+ts_seasonal(moveis.time, type = 'all', palette_normal = "viridis", 
+            Ygrid = T, Xgrid = T, title = "Buscando Pontos com Sazonalidade") # Sazonalidade 
+
+ts_seasonal(moveis.time, type = "box", 
+            title = "Boxplot para cada mês: Índice") # Boxplot 
+
+ts_heatmap(moveis.time, padding = T, 
+           title = "Heatmap: mapeamento os pontos sazonais") # Sazonalidade 
+
+ts_surface(moveis.time) # Plote 3D
+```
+![](sazonal1.png)
+Note que nos plotes a seguir, pode-se explorar pontos de sazonalidade dos três anos selecionados. Retornando possíveis pontos sazonais no final do ano (como pode ser observado no plote heatmap). Em 2021, por sua vez, não ocorreu queda tâo abrupta como em 2020 - apenas repetindo o padrão de aumento do índice do volume de vendas no final do ano.  
+
+
+![](polar.png)
+![](sazonal2.png)
+
+![](sazonal3.png)
+
+![](sazonal4.png)
+
+Por fim, buscando mapear a diferença entre os Estados, pode-se classificar os Estados em grupos de acordo com o índice de volume de vendas para os anos selecionados. Bem, para isso aplicou-se um algoritmo não supervisionado de Machine Learning bem simples: o Dendrograma. A ideia é básica, calcula-se a distância (similiaridade) entre os Estados formando grupos (clusters). Na metodologia adotada, pegou a mediana para cada Estado (dado os anos de 2019 a 2021) e, posteriormente, aplicou o dendrograma classificando os Estados em grupos. Assim, padroniza os dados e depois aplica a distãncia Euclidiana: 
+
+$$
+Z = \frac{x - \mu}{\sigma}
+$$
+
+$$
+D_{E}(p,q) = \sqrt{(p_1 - q_1)^2 +...+ (p_n - q_n)^2} = \sqrt{\sum_{i=1}^n (p_i - q_i)^2}
+$$
+
+
+```{r message=F, warning=F}
+data.cluster <- data.moveis %>% 
+  pivot_longer(cols = BR:DF, 
+               names_to = "Estados")
+
+data.cluster <- data.cluster %>% group_by(Estados) %>% 
+  summarise(indice = median(value))
+
+dendrograma <- data.frame(scale(data.cluster[,2]))
+row.names(dendrograma) <- data.cluster$Estados
+
+# Agrupando - Euclidean & Ward.D2
+
+distancia<- dist(dendrograma, method = "euclidean")
+clusterizado<- hclust(distancia, method = "ward.D2")
+```
+
+Em seguida pode-se observar os agrupamentos. Nota-se que o grupo 3 (cor vermelha) retorna o grupo com os Estados com o menor índice; por sua vez, o grupo 1 (cor verde) retorna o grupo com os Estados com o maior índice. E o grupo 2 (cor azul), pode-se considerar os Estados com o índice moderado. 
+
+
+```{r message=F, warning=F}
+# Dendrograma para visualizar os agrupamentos
+
+fviz_dend(clusterizado, k=3, labels_track_height = 1, ylab = "Distância",
+    main = "Agrupamento por semelhença (distância) entre a mediana dos Estados",
+    cex =0.5)
+
+
+data.cluster$agrupamentos <- cutree(clusterizado, k=3)
+grupo.1 <- filter(data.cluster, agrupamentos == 1)
+grupo.2 <- filter(data.cluster, agrupamentos == 2)
+grupo.3 <- filter(data.cluster, agrupamentos == 3)
+
+media.1 <- mean(grupo.1$indice)
+media.2 <- mean(grupo.2$indice)
+media.3 <- mean(grupo.3$indice)
+
+Medias <- data.frame(media.1, media.2, media.3)
+```
+
+Concluindo, pode-se avaliar que o grupo 1 com BA, ES e SC representam os Estados que obtiveram os maiores índices de volume de venda e, por outro lado, o grupo 3 com CE, MG e PE representam os Estados que obtiveram os menores índices de volume de venda. E o grupo 2 (BR, DF, GO, PA, RJ, RS, SP) representam os Estados moderados no volume de vendas. A média do índice dos grupos pode ser visualizado a seguir:  
+
+```{r message=F, warning=F}
+kable(Medias, caption = "Média dos agrupamentos", 
+      col.names = c("Grupo 1", "Grupo 2", "Grupo 3"))
+```
+
+# 3. Calcule a variação percentual na fase inicial da pandemia, entre abril de 2019 e abril de 2020, para todos os estados, dentro do setor de interesse. Mostre graficamente as diferenças.
+
+```{r}
+var.data <- data.base %>% 
+  filter(setor %in% c("Móveis ") & data >= "2019-04-01") %>% 
+  filter(data <= "2020-04-01") %>% 
+  mutate(Var.Br = BR - lag(BR), 
+         Var.CE = CE - lag(CE), 
+         Var.PE = PE - lag(PE), 
+         Var.BA = BA - lag(BA), 
+         Var.MG = MG - lag(MG), 
+         Var.ES = ES - lag(ES), 
+         Var.RJ = RJ - lag(RJ), 
+         Var.SP = SP - lag(SP), 
+         Var.PA = PA - lag(PA), 
+         Var.SC = SC - lag(SC), 
+         Var.RS = RS - lag(RS), 
+         Var.GO = GO - lag(GO), 
+         Var.DF = DF - lag(DF))
+
+# Organizando 
+
+var.data <- data.frame(var.data[c(1:3, 17:29)])
+var.data <- data.frame(var.data[2:13, ])
+
+var.time <-ts(var.data[, 4:16], start = c(2019, 5), 
+                              end = c(2021, 4), frequency = 12)
+
+autoplot(var.time)+
+  labs(title = "Variação percentual do índice de volume de vendas", 
+       y = "Variação Percentual", x = "", caption = "Luiz Paulo Tavares Gonçalves")+
+  theme_bw()
+```
+
+# PARTE C 
+
+### 1. Importe a base “rendimento_efetivo_real.csv”.
+
+```{r message=F, warning=F}
+data.rendimento <- read_delim("rendimento_efetivo_real.csv", delim = ";")
+data.rendimento$...3 = NULL
+```
+
+### 2. Renomeie as colunas para que tenhamos "data" e "renda".
+
+```{r message=F, warning=F}
+data.rendimento <- data.rendimento %>% 
+  rename("data" = "Data", 
+         "renda" = "Rendimento real médio de todos os trabalhos efetivos mensais - R$ Penúltimo mês da série - Instituto Brasileiro de Geografia e Estatística, Pesquisa Nacional por Amostra de Domicílios Contínua (IBGE/PNAD Contínua) - PNADC12_RRTE12")
+```
+
+### 3. Ajuste a coluna data para o formato YYYY-MM-DD. (Utilize 01 quando não houver especificado o dia)
+
+```{r message=F, warning=F}
+data <- seq.Date(from = as_date("2012-03-01"), 
+                 to = as_date("2021-10-01"),
+                 by = "month")
+
+data.rendimento <- data.frame(data, data.rendimento)
+data.rendimento$data.1 = NULL
+```
+
+### 4. Junte com a base anterior já organizada.
+
+```{r message=F, warning=F}
+data.base <- data.base %>% 
+  filter(data >= "2012-03-01" & 
+           data <= "2021-10-01")
+# Junção das bases 
+
+data.base <- data.frame(data.base, data.rendimento)
+
+# Limpando 
+
+data.base <- data.base %>% 
+ select(!c(var, setor, data.1)) %>% 
+  rename("Anos" = "data")
+```
+
+# 5. Gere uma visualização com as duas variáveis de interesse (note que é apenas para Brasil).
+
+Antes da plotagem da relação entre as variáveis rendimento e índice do volume de vendas, optou-se por transformar ambas variaveis por logaritmo natural, assim, buscando uma melhor estabilização da variância
+
+```{r message=F, warning=F}
+ggplot(data = data.base, aes(
+  y = log(BR), x = log(renda), colour = Anos))+
+  geom_point(pch = 19)+
+  geom_smooth(method = "lm", col = "black", fill = "red")+
+  labs(y = "Log do índice", x = "Log do Rendimento", 
+       title = "Índice vs Rendimento - Ajustamento Linear Via MQO")+
+  theme_bw()
+```
+
+Como observado, as variáveis não têm um bom ajustamento linear. Vamos ver a correlação entre as variáveis e a distribuição das variáveis 
+
+```{r message=F, warning=F}
+
+ggpairs(data.base[c(2, 15)], 
+        lower = list(continuos = "smooth"))+
+  ggtitle("Matriz de Correlação de Pearson")+
+  theme_bw()
+```
+
+Nota-se uma fraquíssima correlação negativa e, para piorar, não significativa 
+
+# 6. Crie um modelo estatístico que estime a relação entre volume de vendas de móveis e eletrodomésticos com o rendimento real médio efetivo.
+
+Como indica os dois plotes anteriores, aparentemente uma modelagem via MQO pressupondo linearidade não é adequado. Não obstante, tratando-se de uma série temporal cabe alguns testes antes da escolha da modelagem adequada. Primeiro, vamos observar a decomposição da variável dependente (índice de venda) e variável explicativa (renda): 
+
+```{r message=F, warning=F}
+data.time <- ts(data = data.base[c(2, 15)], 
+                start = c(2012, 3), end = c(2021, 10), frequency = 12)
+```
+
+A decomposição da série temporal do índice como pode ser visualizado a seguir indica sazonalidade 
+
+```{r}
+ts_decompose(data.time[, 1], type = "additive")
+```
+![](decomposicao1.png)
+Assim como, a renda também apresenta sazonalidade
+
+```{r}
+ts_decompose(data.time[, 2], type = "additive")
+```
+
+![](decomposicao2.png)
+
+# Testando estacionariedade 
+
+Outro teste fundamental dado o problema de modelagem com séries temporais e testar a presença de raiz unitária nas séries 
+Para isso optou-se em usar o teste de Philips-Perron, o qual segue o teste de hipótese: 
+
+  Ho = estacionário: p > 0.05
+  
+  Ha = não estacionário: p <= 0.05
+  
+
+```{r}
+pp.indice <- ur.pp(data.time[,1])
+summary(pp.indice)
+
+pp.renda <- ur.pp(data.time[, 2])
+summary(pp.renda)
+```
+
+  
+Como pode ser observado, a série temporal do índice de venda não é estacionário. Assim como, a renda também não é estacionária. Com séries não estacionárias a modelagem torna-se mais complexa. Precisando, assim, testar a cointegração para posteriormente a escolha da modelagem que, dependendo do resultado da cointegração, precisará passar por diferenciação das séries. Não obstante, antes vamos testar a presença de autocorrelação nas séries como segue com ACF e PACF:
+
+```{r}
+ts_cor(data.time[, 1], seasonal = T, ci = 0.95)
+ts_cor(data.time[, 2], seasonal = T, ci = 0.95)  
+```
+![](autoco1.png)
+![](autoco2.png)
+
+Como pode ser observado, ambas apresentam autocorrelação 
+   
+# Teste de Cointegração
+
+Continuando na modelagem, a seguir aplica-se o teste de cointegração. Para o teste de cointegração optou-se em escolher o teste de Johansen. Primeiro, aplica-se o criério VAR de Seleção para encontrar o número ótimo de lags: 
+
+```{r message=F, warning=F}
+library(vars) # Critério Var e Teste de Cointegração
+
+lagselect <- VARselect(data.time, lag.max = 24, type = "trend", season = 12)
+
+select.var <- data.frame(lagselect$selection)
+select.criterio <- data.frame(lagselect$criteria)
+lagselect$selection
+lagselect$criteria
+```
+
+Optante em selecionar com o critério AIC, posteriormente, aplica-se o teste de cointegração: 
+
+```{r message=F, warning=F}
+ctest1t <- ca.jo(data.time, type = "trace", ecdet = "trend", K = 12)
+summary(ctest1t)
+
+ctest1e <- ca.jo(data.time, type = "eigen", ecdet = "trend", K = 12)
+summary(ctest1e)
+```
+
+Como pode ser observado, as séries não são cointegrada nem mesmo considerando 10%. 
+
+# Assim, encontra-se de acordo com a literatura em séries temporais um dos modelos possíveis para modelar dado os resultados encontrados. Com séries não estacionárias e não cointegradas (como os resultados indicam), um dos caminhos possíveis é diferenciar os dados até encontrar estacionariedade e estimar um VAR com as séries diferenciadas. 
+
